@@ -29,7 +29,45 @@ interface AccidentMapProps {
 const AccidentMap = ({ mapboxToken }: AccidentMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const [accidents, setAccidents] = useState<Accident[]>([]);
+  const [accidents, setAccidents] = useState<Accident[]>([
+    // Sample accidents for demonstration
+    {
+      id: '1',
+      latitude: 40.7128,
+      longitude: -74.006,
+      timestamp: new Date().toISOString(),
+      severity: 'moderate',
+      description: 'Rear-end collision at intersection',
+      injuries: 2
+    },
+    {
+      id: '2',
+      latitude: 40.7130,
+      longitude: -74.0058,
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+      severity: 'minor',
+      description: 'Fender bender',
+      injuries: 0
+    },
+    {
+      id: '3',
+      latitude: 40.7125,
+      longitude: -74.0065,
+      timestamp: new Date(Date.now() - 7200000).toISOString(),
+      severity: 'severe',
+      description: 'Multi-vehicle accident',
+      injuries: 4
+    },
+    {
+      id: '4',
+      latitude: 40.7140,
+      longitude: -74.0070,
+      timestamp: new Date(Date.now() - 86400000).toISOString(),
+      severity: 'minor',
+      description: 'Side-swipe accident',
+      injuries: 1
+    }
+  ]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [tempMarkerPosition, setTempMarkerPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [newAccident, setNewAccident] = useState<{
@@ -397,10 +435,10 @@ const AccidentMap = ({ mapboxToken }: AccidentMapProps) => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <MapPin className="w-5 h-5" />
-              Accident Locations
+              Accident Locations & Neighborhood Statistics
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Click anywhere on the map to mark a new accident location
+              Click anywhere on the map to mark a new accident. Clustered circles show accident counts per neighborhood.
             </p>
           </CardHeader>
           <CardContent className="p-0">
