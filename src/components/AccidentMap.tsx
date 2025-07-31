@@ -84,36 +84,8 @@ const AccidentMap = ({ mapboxToken }: AccidentMapProps) => {
   const defaultCenter: [number, number] = [-74.006, 40.7128]; // New York City
   const defaultZoom = 14;
 
-  useEffect(() => {
-    if (!mapContainer.current || !mapboxToken) return;
-
-    mapboxgl.accessToken = mapboxToken;
-    
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
-      center: defaultCenter,
-      zoom: defaultZoom,
-    });
-
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    // Click handler for adding new accidents
-    map.current.on('click', (e) => {
-      setTempMarkerPosition({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-      setShowAddDialog(true);
-    });
-
-    toast.success("Map loaded! Click anywhere to mark an accident location.");
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [mapboxToken]);
-
-  // Add clustered accidents to map
-  useEffect(() => {
+  // Function to add accident clusters to the map
+  const addAccidentClusters = () => {
     if (!map.current || accidents.length === 0) return;
 
     // Convert accidents to GeoJSON
@@ -289,7 +261,55 @@ const AccidentMap = ({ mapboxToken }: AccidentMapProps) => {
     map.current.on('mouseleave', 'unclustered-point', () => {
       map.current!.getCanvas().style.cursor = '';
     });
+  };
+
+  useEffect(() => {
+    if (!mapContainer.current || !mapboxToken) return;
+
+    mapboxgl.accessToken = mapboxToken;
+    
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: defaultCenter,
+      zoom: defaultZoom,
+    });
+
+    // Add navigation controls
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    // Wait for style to load before adding sources
+    map.current.on('style.load', () => {
+      addAccidentClusters();
+    });
+
+    // Click handler for adding new accidents
+    map.current.on('click', (e) => {
+      // Only add accident if we didn't click on a cluster or point
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: ['clusters', 'unclustered-point']
+      });
+      
+      if (features.length === 0) {
+        setTempMarkerPosition({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+        setShowAddDialog(true);
+      }
+    });
+
+    toast.success("Map loaded! Click anywhere to mark an accident location.");
+
+    return () => {
+      map.current?.remove();
+    };
+  }, [mapboxToken]);
+
+  // Update clusters when accidents change
+  useEffect(() => {
+    if (map.current && map.current.isStyleLoaded()) {
+      addAccidentClusters();
+    }
   }, [accidents]);
+
 
   const handleAddAccident = () => {
     if (!tempMarkerPosition) return;
