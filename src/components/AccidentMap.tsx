@@ -74,60 +74,182 @@ const AccidentMap = ({ mapboxToken }: AccidentMapProps) => {
     };
   }, [mapboxToken]);
 
-  // Add markers for existing accidents
+  // Add clustered accidents to map
   useEffect(() => {
-    if (!map.current) return;
+    if (!map.current || accidents.length === 0) return;
 
-    // Clear existing markers
-    const existingMarkers = document.querySelectorAll('.accident-marker');
-    existingMarkers.forEach(marker => marker.remove());
+    // Convert accidents to GeoJSON
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: accidents.map((accident) => ({
+        type: 'Feature' as const,
+        properties: {
+          id: accident.id,
+          severity: accident.severity,
+          description: accident.description,
+          injuries: accident.injuries,
+          timestamp: accident.timestamp
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [accident.longitude, accident.latitude]
+        }
+      }))
+    };
 
-    // Add new markers
-    accidents.forEach((accident) => {
-      const markerElement = document.createElement('div');
-      markerElement.className = 'accident-marker';
-      markerElement.innerHTML = `
-        <div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-xs font-bold cursor-pointer
-          ${accident.severity === 'severe' ? 'bg-red-500' : 
-            accident.severity === 'moderate' ? 'bg-orange-500' : 'bg-yellow-500'}">
-          !
-        </div>
-      `;
+    // Remove existing source and layers if they exist
+    if (map.current.getSource('accidents')) {
+      if (map.current.getLayer('clusters')) map.current.removeLayer('clusters');
+      if (map.current.getLayer('cluster-count')) map.current.removeLayer('cluster-count');
+      if (map.current.getLayer('unclustered-point')) map.current.removeLayer('unclustered-point');
+      map.current.removeSource('accidents');
+    }
+
+    // Add source with clustering
+    map.current.addSource('accidents', {
+      type: 'geojson',
+      data: geojson,
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50
+    });
+
+    // Add cluster circles
+    map.current.addLayer({
+      id: 'clusters',
+      type: 'circle',
+      source: 'accidents',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': [
+          'step',
+          ['get', 'point_count'],
+          '#f59e0b', // yellow for 1-4 accidents
+          5,
+          '#f97316', // orange for 5-9 accidents
+          10,
+          '#dc2626'  // red for 10+ accidents
+        ],
+        'circle-radius': [
+          'step',
+          ['get', 'point_count'],
+          15, // radius for 1-4 accidents
+          5,
+          20, // radius for 5-9 accidents
+          10,
+          25  // radius for 10+ accidents
+        ],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    });
+
+    // Add cluster count labels
+    map.current.addLayer({
+      id: 'cluster-count',
+      type: 'symbol',
+      source: 'accidents',
+      filter: ['has', 'point_count'],
+      layout: {
+        'text-field': '{point_count_abbreviated}',
+        'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+        'text-size': 12
+      },
+      paint: {
+        'text-color': '#ffffff'
+      }
+    });
+
+    // Add individual accident points
+    map.current.addLayer({
+      id: 'unclustered-point',
+      type: 'circle',
+      source: 'accidents',
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-color': [
+          'match',
+          ['get', 'severity'],
+          'severe', '#dc2626',
+          'moderate', '#f97316',
+          'minor', '#f59e0b',
+          '#f59e0b'
+        ],
+        'circle-radius': 8,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    });
+
+    // Click handler for clusters
+    map.current.on('click', 'clusters', (e) => {
+      const features = map.current!.queryRenderedFeatures(e.point, {
+        layers: ['clusters']
+      });
+
+      const clusterId = features[0].properties!.cluster_id;
+      const source = map.current!.getSource('accidents') as mapboxgl.GeoJSONSource;
+      
+      source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+        if (err) return;
+
+        map.current!.easeTo({
+          center: (features[0].geometry as any).coordinates,
+          zoom: zoom
+        });
+      });
+    });
+
+    // Click handler for individual points
+    map.current.on('click', 'unclustered-point', (e) => {
+      const properties = e.features![0].properties!;
+      const coordinates = (e.features![0].geometry as any).coordinates.slice();
 
       const popup = new mapboxgl.Popup({
         offset: 25,
         className: 'accident-popup'
       }).setHTML(`
-        <div class="p-2 min-w-[200px]">
+        <div class="p-3 min-w-[200px]">
           <div class="flex items-center gap-2 mb-2">
             <div class="w-3 h-3 rounded-full ${
-              accident.severity === 'severe' ? 'bg-red-500' : 
-              accident.severity === 'moderate' ? 'bg-orange-500' : 'bg-yellow-500'
+              properties.severity === 'severe' ? 'bg-red-500' : 
+              properties.severity === 'moderate' ? 'bg-orange-500' : 'bg-yellow-500'
             }"></div>
-            <span class="font-semibold capitalize">${accident.severity} Accident</span>
+            <span class="font-semibold capitalize">${properties.severity} Accident</span>
           </div>
-          <p class="text-sm mb-2">${accident.description}</p>
+          <p class="text-sm mb-2">${properties.description}</p>
           <div class="text-xs text-gray-600 space-y-1">
             <div class="flex items-center gap-1">
               <span class="w-3 h-3 flex items-center justify-center">📅</span>
-              ${new Date(accident.timestamp).toLocaleDateString()}
+              ${new Date(properties.timestamp).toLocaleDateString()}
             </div>
             <div class="flex items-center gap-1">
               <span class="w-3 h-3 flex items-center justify-center">🕐</span>
-              ${new Date(accident.timestamp).toLocaleTimeString()}
+              ${new Date(properties.timestamp).toLocaleTimeString()}
             </div>
             <div class="flex items-center gap-1">
               <span class="w-3 h-3 flex items-center justify-center">👥</span>
-              ${accident.injuries} injuries
+              ${properties.injuries} injuries
             </div>
           </div>
         </div>
       `);
 
-      new mapboxgl.Marker(markerElement)
-        .setLngLat([accident.longitude, accident.latitude])
-        .setPopup(popup)
-        .addTo(map.current!);
+      popup.setLngLat(coordinates).addTo(map.current!);
+    });
+
+    // Change cursor on hover
+    map.current.on('mouseenter', 'clusters', () => {
+      map.current!.getCanvas().style.cursor = 'pointer';
+    });
+    map.current.on('mouseleave', 'clusters', () => {
+      map.current!.getCanvas().style.cursor = '';
+    });
+    map.current.on('mouseenter', 'unclustered-point', () => {
+      map.current!.getCanvas().style.cursor = 'pointer';
+    });
+    map.current.on('mouseleave', 'unclustered-point', () => {
+      map.current!.getCanvas().style.cursor = '';
     });
   }, [accidents]);
 
